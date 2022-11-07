@@ -38,9 +38,12 @@
               (. menu append
                  (MenuItem. #js {:label (str "Look Up “" selection-text "”")
                                  :click #(. web-contents showDefinitionForSelection)})))
+
+          ;;这是右键菜单
+
             (when has-text?
               (. menu append
-                 (MenuItem. #js {:label "Search with Google"
+                 (MenuItem. #js {:label "用Google搜索"
                                  :click #(let [url (js/URL. "https://www.google.com/search")]
                                            (.. url -searchParams (set "q" selection-text))
                                            (.. shell (openExternal (.toString url))))}))
@@ -50,20 +53,20 @@
             (when editable?
               (when has-text?
                 (. menu append
-                   (MenuItem. #js {:label "Cut"
+                   (MenuItem. #js {:label "剪切"
                                    :enabled (.-canCut edit-flags)
                                    :role "cut"}))
                 (. menu append
-                   (MenuItem. #js {:label "Copy"
+                   (MenuItem. #js {:label "复制"
                                    :enabled (.-canCopy edit-flags)
                                    :role "copy"})))
 
               (. menu append
-                 (MenuItem. #js {:label "Paste"
+                 (MenuItem. #js {:label "粘贴"
                                  :enabled (.-canPaste edit-flags)
                                  :role "paste"}))
               (. menu append
-                 (MenuItem. #js {:label "Select All"
+                 (MenuItem. #js {:label "全部选中"
                                  :enabled (.-canSelectAll edit-flags)
                                  :role "selectAll"})))
 
