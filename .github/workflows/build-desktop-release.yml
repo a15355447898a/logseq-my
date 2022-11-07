@@ -38,11 +38,6 @@ on:
         type: boolean
         required: true
         default: true
-      build-android:
-        description: 'Build Android App'
-        type: boolean
-        required: true
-        default: true
   schedule: # Every workday at the 2 P.M. (UTC) we run a scheduled nightly build
     - cron: '0 14 * * MON-FRI'
 
@@ -278,7 +273,7 @@ jobs:
 
   nightly-release:
     if: ${{ github.event_name == 'schedule' || github.event.inputs.build-target == 'nightly' }}
-    needs: [ build-macos-x64, build-macos-arm64, build-linux, build-windows, build-android ]
+    needs: [ build-linux, build-windows]
     runs-on: ubuntu-18.04
     steps:
 
