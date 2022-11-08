@@ -350,7 +350,6 @@ jobs:
 
       - name: Generate SHA256 checksums
         run: |
-          sha256sum *-darwin-* > SHA256SUMS.txt
           sha256sum *-win-* >> SHA256SUMS.txt
           sha256sum *-linux-* >> SHA256SUMS.txt
           sha256sum RELEASES >> SHA256SUMS.txt
