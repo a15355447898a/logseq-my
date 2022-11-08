@@ -449,7 +449,7 @@
           (not instrument-disabled?)
           (fn [] (instrument/disable-instrument
                    (not instrument-disabled?)))
-          [:span.text-sm.opacity-50 "Logseq will never collect your local graph database or sell your data."]))
+          [:span.text-sm.opacity-50 "Logseq永远不会收集您的本地图谱数据库或出售您的数据."]))
 
 (defn clear-cache-row [t]
   (row-with-button-action {:left-label   (t :settings-page/clear-cache)
@@ -581,13 +581,13 @@
   [:div.panel-wrap
    [:div.text-sm.my-4
     [:span.text-sm.opacity-50.my-4
-     "You can view a page's edit history by clicking the three vertical dots "
-     "in the top-right corner and selecting \"Check page's history\". "
-     "Logseq uses "]
+     "您可以通过单击右上角的三个垂直点"
+     "并选择\"查看页面历史记录\"来查看页面的编辑历史记录."
+     "Logseq使用"]
     [:a {:href "https://git-scm.com/" :target "_blank"}
      "Git"]
     [:span.text-sm.opacity-50.my-4
-     " for version control."]]
+     "来进行版本管理."]]
    [:br]
    (switch-git-auto-commit-row t)
    (git-auto-commit-seconds t)
@@ -611,7 +611,7 @@
 
      (ui/admonition
        :warning
-       [:p "Clearing the cache will discard open graphs. You will lose unsaved changes."])]))
+       [:p "清除缓存将丢弃打开的图谱.您将丢失未保存的更改."])]))
 
 (rum/defc sync-enabled-switcher
   [enabled?]

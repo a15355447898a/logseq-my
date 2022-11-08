@@ -43,8 +43,8 @@
 
             (when has-text?
               (. menu append
-                 (MenuItem. #js {:label "用Google搜索"
-                                 :click #(let [url (js/URL. "https://www.google.com/search")]
+                 (MenuItem. #js {:label "用Bing搜索"
+                                 :click #(let [url (js/URL. "https://cn.bing.com/search")]
                                            (.. url -searchParams (set "q" selection-text))
                                            (.. shell (openExternal (.toString url))))}))
               (. menu append (MenuItem. #js {:type "separator"})))
