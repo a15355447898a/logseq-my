@@ -72,7 +72,7 @@
 
             (when (= media-type "image")
               (. menu append
-                 (MenuItem. #js {:label "Save Image"
+                 (MenuItem. #js {:label "保存图片"
                                  :click (fn [menu-item]
                                           (let [url (.-srcURL params)
                                                 url (if (.-transform menu-item)
@@ -81,7 +81,7 @@
                                             (download win url)))}))
 
               (. menu append
-                 (MenuItem. #js {:label "Save Image As..."
+                 (MenuItem. #js {:label "图片另存为..."
                                  :click (fn [menu-item]
                                           (let [url (.-srcURL params)
                                                 url (if (.-transform menu-item)
@@ -90,7 +90,7 @@
                                             (download win url #js {:saveAs true})))}))
 
               (. menu append
-                 (MenuItem. #js {:label "Copy Image"
+                 (MenuItem. #js {:label "复制图片"
                                  :click #(. web-contents copyImageAt (.-x params) (.-y params))})))
 
             (when (not-empty (.-items menu))

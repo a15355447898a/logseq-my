@@ -220,13 +220,13 @@
    (concat
     ;; basic
     [["Page reference" [[:editor/input page-ref/left-and-right-brackets {:backward-pos 2}]
-                        [:editor/search-page]] "Create a backlink to a page"]
-     ["Page embed" (embed-page) "Embed a page here"]
+                        [:editor/search-page]] "创建指向页面的反向链接"]
+     ["Page embed" (embed-page) "在此处嵌入页面"]
      ["Block reference" [[:editor/input block-ref/left-and-right-parens {:backward-pos 2}]
-                         [:editor/search-block :reference]] "Create a backlink to a block"]
-     ["Block embed" (embed-block) "Embed a block here" "Embed a block here"]
-     ["Link" (link-steps) "Create a HTTP link"]
-     ["Image link" (image-link-steps) "Create a HTTP link to a image"]
+                         [:editor/search-block :reference]] "创建到块的反向链接"]
+     ["Block embed" (embed-block) "在此处嵌入块"]
+     ["Link" (link-steps) "创建HTTP链接"]
+     ["Image link" (image-link-steps) "创建指向图像的HTTP链接"]
      (when (state/markdown?)
        ["Underline" [[:editor/input "<ins></ins>"
                       {:last-pattern (state/get-editor-command-trigger)
@@ -245,11 +245,11 @@
 
     ;; time & date
 
-    [["Tomorrow" #(get-page-ref-text (date/tomorrow)) "Insert the date of tomorrow"]
-     ["Yesterday" #(get-page-ref-text (date/yesterday)) "Insert the date of yesterday"]
-     ["Today" #(get-page-ref-text (date/today)) "Insert the date of today"]
-     ["Current time" #(date/get-current-time) "Insert current time"]
-     ["Date picker" [[:editor/show-date-picker]] "Pick a date and insert here"]]
+    [["Tomorrow" #(get-page-ref-text (date/tomorrow)) "插入明天的日期"]
+     ["Yesterday" #(get-page-ref-text (date/yesterday)) "插入昨天的日期"]
+     ["Today" #(get-page-ref-text (date/today)) "插入今天的日期"]
+     ["Current time" #(date/get-current-time) "插入当前时间"]
+     ["Date picker" [[:editor/show-date-picker]] "选择日期并在此处插入"]]
 
     ;; task management
     (get-preferred-workflow)

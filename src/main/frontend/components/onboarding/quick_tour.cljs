@@ -43,7 +43,7 @@
    ;; step 1
    {:id                "nav-help"
     :text              (h/render-html [:section [:h2 "❓ Help"]
-                                       [:p "您可以随时单击此处获取有关Logseq的帮助和其他信息."]])
+                                       [:p "您可以随时单击此处获取有关Logseq的帮助和其他信息。"]])
     :attachTo          {:element ".cp__sidebar-help-btn" :on "top"}
     :beforeShowPromise #(if (state/sub :ui/sidebar-open?)
                           (wait-target state/hide-right-sidebar! 700)

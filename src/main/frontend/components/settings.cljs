@@ -449,7 +449,7 @@
           (not instrument-disabled?)
           (fn [] (instrument/disable-instrument
                    (not instrument-disabled?)))
-          [:span.text-sm.opacity-50 "Logseq永远不会收集您的本地图谱数据库或出售您的数据."]))
+          [:span.text-sm.opacity-50 "Logseq永远不会收集您的本地图谱数据库或出售您的数据。"]))
 
 (defn clear-cache-row [t]
   (row-with-button-action {:left-label   (t :settings-page/clear-cache)
@@ -582,12 +582,12 @@
    [:div.text-sm.my-4
     [:span.text-sm.opacity-50.my-4
      "您可以通过单击右上角的三个垂直点"
-     "并选择\"查看页面历史记录\"来查看页面的编辑历史记录."
+     "并选择\"查看页面历史记录\"来查看页面的编辑历史记录。"
      "Logseq使用"]
     [:a {:href "https://git-scm.com/" :target "_blank"}
      "Git"]
     [:span.text-sm.opacity-50.my-4
-     "来进行版本管理."]]
+     "来进行版本管理。"]]
    [:br]
    (switch-git-auto-commit-row t)
    (git-auto-commit-seconds t)
@@ -689,11 +689,11 @@
          {:class (when-not user-handler/alpha-or-beta-user? "opacity-50 pointer-events-none cursor-not-allowed")}
          (sync-switcher-row enable-sync?)
          [:div.text-sm
-          "Click"
+          "点击"
           [:a.mx-1 {:href "https://blog.logseq.com/how-to-setup-and-use-logseq-sync/"
                     :target "_blank"}
-           "here"]
-          "for instructions on how to set up and use Sync."]]])
+           "这里"]
+          "来获取有关如何设置和使用Sync的说明。"]]])
 
      (when-not web-platform?
        [:<>
