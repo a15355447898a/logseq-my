@@ -14,9 +14,9 @@
             [frontend.fs.sync :as fs-sync]
             [frontend.handler.file-sync :refer [*beta-unavailable?] :as file-sync-handler]
             [frontend.handler.notification :as notification]
-            [frontend.handler.page :as page-handler]
             [frontend.handler.repo :as repo-handler]
             [frontend.handler.user :as user-handler]
+            [frontend.handler.page :as page-handler]
             [frontend.handler.web.nfs :as web-nfs]
             [frontend.mobile.util :as mobile-util]
             [frontend.state :as state]
@@ -135,7 +135,9 @@
                 (when-let [GraphUUID (get (async/<! (file-sync-handler/create-graph graph-name)) 2)]
                   (async/<! (fs-sync/<sync-start))
                   (state/set-state! [:ui/loading? :graph/create-remote?] false)
-                  ;; update existing repo
+                  ;; update both local && remote graphs
+                  (state/add-remote-graph! {:GraphUUID GraphUUID
+                                            :GraphName graph-name})
                   (state/set-repos! (map (fn [r]
                                            (if (= (:url r) repo)
                                              (assoc r
@@ -368,9 +370,13 @@
                                            (state/pub-event! [:file-sync/onboarding-tip :unavailable])
 
                                            ;; current graph belong to other user, do nothing
-                                           (and (first @graphs-txid)
-                                                (not (fs-sync/check-graph-belong-to-current-user (user-handler/user-uuid)
-                                                                                                 (first @graphs-txid))))
+                                           (let [user-uuid (async/<! (user-handler/<user-uuid))
+                                                 user-uuid (when-not (instance? ExceptionInfo user-uuid) user-uuid)]
+                                             (and (first @graphs-txid)
+                                                  user-uuid
+                                                  (not (fs-sync/check-graph-belong-to-current-user
+                                                        user-uuid
+                                                        (first @graphs-txid)))))
                                            nil
 
                                            (and synced-file-graph?

@@ -857,7 +857,7 @@
 (rum/defc block-reference < rum/reactive
   db-mixins/query
   [config id label]
-  (when-let [block-id (parse-uuid id)]
+  (if-let [block-id (parse-uuid id)]
     (let [db-id (:db/id (db/pull [:block/uuid block-id]))
           block (when db-id (db/pull-block db-id))
           block-type (keyword (get-in block [:block/properties :ls-type]))
@@ -927,7 +927,10 @@
                         :delay       [1000, 100]} inner)
              inner)])
         [:span.warning.mr-1 {:title "Block ref invalid"}
-         (block-ref/->block-ref id)]))))
+         (block-ref/->block-ref id)]))
+  [:span.warning.mr-1 {:title "Block ref invalid"}
+    (block-ref/->block-ref id)]
+))
 
 (defn inline-text
   ([format v]
@@ -2346,17 +2349,17 @@
   [:div.block-left-menu.flex.bg-base-2.rounded-r-md.mr-1
    [:div.commands-button.w-0.rounded-r-md
     {:id (str "block-left-menu-" uuid)}
-    [:div.indent (ui/icon "indent-increase" {:style {:fontSize 16}})]]])
+    [:div.indent (ui/icon "indent-increase" {:size 18})]]])
 
 (rum/defc block-right-menu < rum/reactive
   [_config {:block/keys [uuid] :as _block} edit?]
   [:div.block-right-menu.flex.bg-base-2.rounded-md.ml-1
-   [:div.commands-button.w-0.flex.flew-col.rounded-md
+   [:div.commands-button.w-0.rounded-md
     {:id (str "block-right-menu-" uuid)
      :style {:max-width (if edit? 40 80)}}
-    [:div.outdent (ui/icon "indent-decrease" {:style {:fontSize 16}})]
+    [:div.outdent (ui/icon "indent-decrease" {:size 18})]
     (when-not edit?
-      [:div.more (ui/icon "dots-circle-horizontal" {:style {:fontSize 16}})])]])
+      [:div.more (ui/icon "dots-circle-horizontal" {:size 18})])]])
 
 (rum/defcs block-content-or-editor < rum/reactive
   (rum/local true ::hide-block-refs?)

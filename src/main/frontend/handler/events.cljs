@@ -42,6 +42,7 @@
             [frontend.handler.web.nfs :as nfs-handler]
             [frontend.mobile.core :as mobile]
             [frontend.mobile.util :as mobile-util]
+            [frontend.mobile.graph-picker :as graph-picker]
             [frontend.modules.instrumentation.posthog :as posthog]
             [frontend.modules.outliner.file :as outliner-file]
             [frontend.modules.shortcut.core :as st]
@@ -113,15 +114,11 @@
       (route-handler/redirect-to-home!)))
   (when-let [dir-name (config/get-repo-dir repo)]
     (fs/watch-dir! dir-name))
-  (repo-handler/refresh-repos!)
   (file-sync-restart!))
 
-(defmethod handle :graph/unlinked [_]
-  (repo-handler/refresh-repos!)
-  (file-sync-restart!))
-
-(defmethod handle :graph/refresh [_]
-  (repo-handler/refresh-repos!))
+(defmethod handle :graph/unlinked [repo current-repo]
+  (when (= (:url repo) current-repo)
+    (file-sync-restart!)))
 
 ;; FIXME: awful multi-arty function.
 ;; Should use a `-impl` function instead of the awful `skip-ios-check?` param with nested callback.
@@ -141,7 +138,6 @@
          (fs/watch-dir! dir-name))
        (srs/update-cards-due-count!)
        (state/pub-event! [:graph/ready graph])
-       (repo-handler/refresh-repos!)
        (file-sync-restart!)))))
 
 ;; Parameters for the `persist-db` function, to show the notification messages
@@ -178,10 +174,39 @@
       "Please wait seconds until all changes are saved for the current graph."
       :warning))))
 
-(defmethod handle :graph/pick-dest-to-sync [[_ graph]]
-  (state/set-modal!
-   (file-sync/pick-dest-to-sync-panel graph)
-   {:center? true}))
+(defmethod handle :graph/pull-down-remote-graph [[_ graph dir-name]]
+  (if (mobile-util/native-ios?)
+    (when-let [graph-name (or dir-name (:GraphName graph))]
+      (let [graph-name (util/safe-sanitize-file-name graph-name)]
+        (if (string/blank? graph-name)
+          (notification/show! "Illegal graph folder name.")
+
+          ;; Create graph directory under Logseq document folder (local)
+          (when-let [root (state/get-local-container-root-url)]
+            (let [graph-path (graph-picker/validate-graph-dirname root graph-name)]
+              (->
+               (p/let [exists? (fs/dir-exists? graph-path)]
+                 (let [overwrite? (if exists?
+                                    (js/confirm (str "There's already a directory with the name \"" graph-name "\", do you want to overwrite it? Make sure to backup it first if you're not sure about it."))
+                                    true)]
+                   (if overwrite?
+                     (p/let [_ (fs/mkdir-if-not-exists graph-path)]
+                       (nfs-handler/ls-dir-files-with-path!
+                        graph-path
+                        {:ok-handler (fn []
+                                       (file-sync-handler/init-remote-graph graph-path graph)
+                                       (js/setTimeout (fn [] (repo-handler/refresh-repos!)) 200))}))
+                     (let [graph-name (-> (js/prompt "Please specify a new directory name to download the graph:")
+                                          str
+                                          string/trim)]
+                       (when-not (string/blank? graph-name)
+                         (state/pub-event! [:graph/pull-down-remote-graph graph graph-name]))))))
+               (p/catch (fn [^js e]
+                          (notification/show! (str e) :error)
+                          (js/console.error e)))))))))
+    (state/set-modal!
+     (file-sync/pick-dest-to-sync-panel graph)
+     {:center? true})))
 
 (defmethod handle :graph/pick-page-histories [[_ graph-uuid page-name]]
   (state/set-modal!
@@ -543,7 +568,9 @@
 (defmethod handle :file-watcher/changed [[_ ^js event]]
   (let [type (.-event event)
         payload (-> event
-                    (js->clj :keywordize-keys true))]
+                    (js->clj :keywordize-keys true)
+                    (update :path (fn [path]
+                                    (when (string? path) (capacitor-fs/ios-force-include-private path)))))]
     (fs-watcher/handle-changed! type payload)
     (when (file-sync-handler/enable-sync?)
      (sync/file-watch-handler type payload))))
@@ -571,6 +598,24 @@
       :on-click (fn []
                   (state/close-modal!)
                   (nfs-handler/refresh! (state/get-current-repo) refresh-cb)))]]))
+
+(defmethod handle :sync/create-remote-graph [[_ current-repo]]
+  (let [graph-name (js/decodeURI (util/node-path.basename current-repo))]
+    (async/go
+      (async/<! (sync/<sync-stop))
+      (state/set-state! [:ui/loading? :graph/create-remote?] true)
+      (when-let [GraphUUID (get (async/<! (file-sync-handler/create-graph graph-name)) 2)]
+        (async/<! (sync/<sync-start))
+        (state/set-state! [:ui/loading? :graph/create-remote?] false)
+        ;; update existing repo
+        (state/set-repos! (map (fn [r]
+                                 (if (= (:url r) current-repo)
+                                   (assoc r
+                                          :GraphUUID GraphUUID
+                                          :GraphName graph-name
+                                          :remote? true)
+                                   r))
+                            (state/get-repos)))))))
 
 (defmethod handle :graph/re-index [[_]]
   ;; Ensure the graph only has ONE window instance
@@ -694,12 +739,10 @@
       (fs/watch-dir! dir))))
 
 (defmethod handle :ui/notify-files-with-reserved-chars [[_ paths]]
-  (sync/<sync-stop)
-
   (notification/show!
    [:div
     [:div.mb-4
-     [:div.font-semibold.mb-4.text-xl "It seems that you're using the old filename format."]
+     [:div.font-semibold.mb-4.text-xl "It seems that some of your filenames are in the outdated format."]
 
      [:div
       [:p
@@ -708,7 +751,7 @@
        "For example, the files below have reserved characters can't be synced on some platforms."]]
      ]
     (ui/button
-      "Upgrade filename format"
+      "Update filename format"
       :on-click (fn []
                   (notification/clear-all!)
                   (state/set-modal!
@@ -724,7 +767,7 @@
   (notification/show!
    [:div
     [:div.mb-4
-     [:div.font-semibold.mb-4.text-xl "It seems that you're using the old filename format."]
+     [:div.font-semibold.mb-4.text-xl "It seems that some of your filenames are in the outdated format."]
      [:p
       "The files below that have reserved characters can't be saved on this device."]
      [:div.overflow-y-auto.max-h-96
@@ -739,9 +782,22 @@
                  "Logseq file and folder naming rules"]
        " for more details."]
       [:p
-       "To solve this problem, we suggest you upgrade the filename format (on Settings > Advanced > Filename format > click EDIT button) in other devices to avoid more potential bugs."]]]]
+       (util/format "To solve this problem, we suggest you quit Logseq and update the filename format (on Settings > Advanced > Filename format > click EDIT button)%s to avoid more potential bugs."
+                    (if (and util/mac? (not (mobile-util/native-ios?)))
+                      ""
+                      " in other devices"))]]]]
    :warning
    false))
+
+(defmethod handle :graph/setup-a-repo [[_ opts]]
+  (let [opts' (merge {:picked-root-fn #(state/close-modal!)
+                      :native-icloud? (not (string/blank? (state/get-icloud-container-root-url)))
+                      :logged?        (user-handler/logged-in?)} opts)]
+    (if (mobile-util/native-ios?)
+      (state/set-modal!
+       #(graph-picker/graph-picker-cp opts')
+       {:label "graph-setup"})
+      (page-handler/ls-dir-files! st/refresh! opts'))))
 
 (defmethod handle :file/alter [[_ repo path content]]
   (p/let [_ (file-handler/alter-file repo path content {:from-disk? true})]

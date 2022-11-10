@@ -12,7 +12,8 @@
             [frontend.util :as util]
             [lambdaisland.glogi :as log]
             [promesa.core :as p]
-            [rum.core :as rum]))
+            [rum.core :as rum]
+            [logseq.graph-parser.util :as gp-util]))
 
 (when (mobile-util/native-ios?)
   (defn ios-ensure-documents!
@@ -168,7 +169,7 @@
 
 (defn- write-file-impl!
   [_this repo _dir path content {:keys [ok-handler error-handler old-content skip-compare?]} stat]
-  (if skip-compare?
+  (if (or (string/blank? repo) skip-compare?)
     (p/catch
      (p/let [result (<write-file-with-utf8 path content)]
        (when ok-handler
@@ -212,31 +213,61 @@
                       (error-handler error)
                       (log/error :write-file-failed error)))))))))
 
-(defn get-file-path [dir path]
-  (let [dir        (some-> dir (string/replace #"/+$" ""))
-        dir        (if (and (not-empty dir) (string/starts-with? dir "/"))
-                     (do
-                       (js/console.trace "WARN: detect absolute path, use URL instead")
-                       (str "file://" (js/encodeURI dir)))
-                     dir)
-        path       (some-> path (string/replace #"^/+" ""))
-        encode-url #(let [encoded-chars?
-                          (and (string? %) (boolean (re-find #"(?i)%[0-9a-f]{2}" %)))]
-                      (cond-> %
-                        (not encoded-chars?)
-                        (js/encodeURI path)))]
-    (cond (string/blank? path)
-          (encode-url dir)
+(defn ios-force-include-private
+  "iOS sometimes return paths without the private part."
+  [path]
+  (if (mobile-util/native-ios?)
+    (cond
+      (string/includes? path "///private/")
+      path
 
-          (string/blank? dir)
-          (encode-url path)
+      (string/includes? path "///")
+      (let [[prefix others] (string/split path "///")]
+        (str prefix "///private/" others))
 
-          (string/starts-with? path dir)
-          (encode-url path)
+      :else
+      (do
+        (state/pub-event! [:instrument {:type :error/ios-path-missing-slashes
+                                        ;; respect user's privacy
+                                        :path (gp-util/safe-subs path 10)}])
+        path))
+    path))
 
-          :else
-          (let [path' (encode-url path)]
-            (str dir "/" path')))))
+(defn normalize-file-protocol-path [dir path]
+  (let [dir             (some-> dir (string/replace #"/+$" ""))
+        dir             (if (and (not-empty dir) (string/starts-with? dir "/"))
+                          (do
+                            (js/console.trace "WARN: detect absolute path, use URL instead")
+                            (str "file://" (js/encodeURI dir)))
+                          dir)
+        path            (some-> path (string/replace #"^/+" ""))
+        safe-encode-url #(let [encoded-chars?
+                               (and (string? %) (boolean (re-find #"(?i)%[0-9a-f]{2}" %)))]
+                           (cond
+                             (not encoded-chars?)
+                             (js/encodeURI %)
+
+                             :else
+                             (js/encodeURI (js/decodeURI %))))
+        path' (cond
+                (and path (string/starts-with? path "file:/"))
+                (safe-encode-url path)
+
+                (string/blank? path)
+                (safe-encode-url dir)
+
+                (string/blank? dir)
+                (safe-encode-url path)
+
+                (string/starts-with? path dir)
+                (safe-encode-url path)
+
+                :else
+                (let [path' (safe-encode-url path)]
+                  (str dir "/" path')))]
+    (if (mobile-util/native-ios?)
+      (ios-force-include-private path')
+      path')))
 
 (defn- local-container-path?
   "Check whether `path' is logseq's container `localDocumentsPath' on iOS"
@@ -260,15 +291,35 @@
      :webkit-allow-full-screen "webkitallowfullscreen"
      :height "100%"}]])
 
+(defn- open-dir
+  [dir]
+  (p/let [_ (when (mobile-util/native-android?) (android-check-permission))
+          {:keys [path localDocumentsPath]} (-> (.pickFolder mobile-util/folder-picker
+                                                             (clj->js (when (and dir (mobile-util/native-ios?))
+                                                                        {:path dir})))
+                                                (p/then #(js->clj % :keywordize-keys true))
+                                                (p/catch (fn [e]
+                                                           (js/alert (str e))
+                                                           nil))) ;; NOTE: If pick folder fails, let it crash
+          _ (when (and (mobile-util/native-ios?)
+                       (not (or (local-container-path? path localDocumentsPath)
+                                (mobile-util/iCloud-container-path? path))))
+              (state/pub-event! [:modal/show-instruction]))
+          _ (js/console.log "Opening or Creating graph at directory: " path)
+          files (readdir path)
+          files (js->clj files :keywordize-keys true)]
+    (into [] (concat [{:path path}] files))))
+
 (defrecord ^:large-vars/cleanup-todo Capacitorfs []
   protocol/Fs
   (mkdir! [_this dir]
-    (-> (.mkdir Filesystem
-                (clj->js
-                 {:path dir}))
-        (p/catch (fn [error]
-                   (log/error :mkdir! {:path dir
-                                       :error error})))))
+    (let [dir' (normalize-file-protocol-path "" dir)]
+      (-> (.mkdir Filesystem
+                  (clj->js
+                   {:path dir'}))
+          (p/catch (fn [error]
+                     (log/error :mkdir! {:path  dir'
+                                         :error error}))))))
   (mkdir-recur! [_this dir]
     (p/let
      [_ (-> (.mkdir Filesystem
@@ -288,7 +339,7 @@
                 dir)]
       (readdir dir)))
   (unlink! [this repo path _opts]
-    (p/let [path (get-file-path nil path)
+    (p/let [path (normalize-file-protocol-path nil path)
             repo-url (config/get-local-dir repo)
             recycle-dir (util/safe-path-join repo-url config/app-name ".recycle") ;; logseq/.recycle
             ;; convert url to pure path
@@ -302,20 +353,20 @@
     ;; Too dangerous!!! We'll never implement this.
     nil)
   (read-file [_this dir path _options]
-    (let [path (get-file-path dir path)]
+    (let [path (normalize-file-protocol-path dir path)]
       (->
        (<read-file-with-utf8 path)
        (p/catch (fn [error]
                   (log/error :read-file-failed error))))))
   (write-file! [this repo dir path content opts]
-    (let [path (get-file-path dir path)]
+    (let [path (normalize-file-protocol-path dir path)]
       (p/let [stat (p/catch
                     (.stat Filesystem (clj->js {:path path}))
                     (fn [_e] :not-found))]
         ;; `path` is full-path
         (write-file-impl! this repo dir path content opts stat))))
   (rename! [_this _repo old-path new-path]
-    (let [[old-path new-path] (map #(get-file-path "" %) [old-path new-path])]
+    (let [[old-path new-path] (map #(normalize-file-protocol-path "" %) [old-path new-path])]
       (p/catch
        (p/let [_ (.rename Filesystem
                           (clj->js
@@ -324,7 +375,7 @@
        (fn [error]
          (log/error :rename-file-failed error)))))
   (copy! [_this _repo old-path new-path]
-    (let [[old-path new-path] (map #(get-file-path "" %) [old-path new-path])]
+    (let [[old-path new-path] (map #(normalize-file-protocol-path "" %) [old-path new-path])]
       (p/catch
        (p/let [_ (.copy Filesystem
                         (clj->js
@@ -333,24 +384,11 @@
        (fn [error]
          (log/error :copy-file-failed error)))))
   (stat [_this dir path]
-    (let [path (get-file-path dir path)]
+    (let [path (normalize-file-protocol-path dir path)]
       (p/chain (.stat Filesystem (clj->js {:path path}))
                #(js->clj % :keywordize-keys true))))
-  (open-dir [_this _ok-handler]
-    (p/let [_ (when (mobile-util/native-android?) (android-check-permission))
-            {:keys [path localDocumentsPath]} (-> (.pickFolder mobile-util/folder-picker)
-                                                  (p/then #(js->clj % :keywordize-keys true))
-                                                  (p/catch (fn [e]
-                                                             (js/alert (str e))
-                                                             nil))) ;; NOTE: If pick folder fails, let it crash
-            _ (when (and (mobile-util/native-ios?)
-                         (not (or (local-container-path? path localDocumentsPath)
-                                  (mobile-util/iCloud-container-path? path))))
-                (state/pub-event! [:modal/show-instruction]))
-            _ (js/console.log "Opening or Creating graph at directory: " path)
-            files (readdir path)
-            files (js->clj files :keywordize-keys true)]
-      (into [] (concat [{:path path}] files))))
+  (open-dir [_this dir _ok-handler]
+    (open-dir dir))
   (get-files [_this path-or-handle _ok-handler]
     (readdir path-or-handle))
   (watch-dir! [_this dir _options]

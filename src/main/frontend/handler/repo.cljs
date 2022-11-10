@@ -14,7 +14,6 @@
             [frontend.handler.common.file :as file-common-handler]
             [frontend.handler.route :as route-handler]
             [frontend.handler.ui :as ui-handler]
-            [frontend.handler.metadata :as metadata-handler]
             [frontend.handler.global-config :as global-config-handler]
             [frontend.idb :as idb]
             [frontend.search :as search]
@@ -22,7 +21,6 @@
             [frontend.state :as state]
             [frontend.util :as util]
             [frontend.util.fs :as util-fs]
-            [lambdaisland.glogi :as log]
             [promesa.core :as p]
             [shadow.resource :as rc]
             [frontend.db.persist :as db-persist]
@@ -128,51 +126,10 @@
     (p/let [_ (fs/mkdir-if-not-exists (util/safe-path-join repo-dir config/app-name))
             _ (fs/mkdir-if-not-exists (util/safe-path-join repo-dir (str config/app-name "/" config/recycle-dir)))
             _ (fs/mkdir-if-not-exists (util/safe-path-join repo-dir (config/get-journals-directory)))
-            _ (file-handler/create-metadata-file repo-url)
             _ (repo-config-handler/create-config-file-if-not-exists repo-url)
             _ (create-contents-file repo-url)
             _ (create-custom-theme repo-url)]
       (state/pub-event! [:page/create-today-journal repo-url]))))
-
-(defn- load-pages-metadata!
-  "force?: if set true, skip the metadata timestamp range check"
-  ([repo file-paths files]
-   (load-pages-metadata! repo file-paths files false))
-  ([repo file-paths files force?]
-   (try
-     (let [file (config/get-pages-metadata-path)]
-       (when (contains? (set file-paths) file)
-         (when-let [content (some #(when (= (:file/path %) file) (:file/content %)) files)]
-           (let [metadata (common-handler/safe-read-string content "Parsing pages metadata file failed: ")
-                 pages (db/get-all-pages repo)
-                 pages (zipmap (map :block/name pages) pages)
-                 metadata (->>
-                           (filter (fn [{:block/keys [name created-at updated-at]}]
-                                     (when-let [page (get pages name)]
-                                       (and
-                                        (>= updated-at created-at) ;; metadata validation
-                                        (or force? ;; when force is true, shortcut timestamp range check
-                                            (and (or (nil? (:block/created-at page))
-                                                     (>= created-at (:block/created-at page)))
-                                                 (or (nil? (:block/updated-at page))
-                                                     (>= updated-at (:block/created-at page)))))
-                                        (or ;; persistent metadata is the gold standard
-                                         (not= created-at (:block/created-at page))
-                                         (not= updated-at (:block/created-at page)))))) metadata)
-                           (remove nil?))]
-             (when (seq metadata)
-               (db/transact! repo metadata {:new-graph? true}))))))
-     (catch :default e
-       (log/error :exception e)))))
-
-(defn update-pages-metadata!
-  "update pages meta content -> db. Only accept non-encrypted content!"
-  [repo content force?]
-  (let [path (config/get-pages-metadata-path)
-        files [{:file/path path
-                :file/content content}]
-        file-paths [path]]
-    (load-pages-metadata! repo file-paths files force?)))
 
 (defonce *file-tx (atom nil))
 
@@ -202,8 +159,7 @@
       nil)))
 
 (defn- after-parse
-  [repo-url files file-paths re-render? re-render-opts opts graph-added-chan]
-  (load-pages-metadata! repo-url file-paths files true)
+  [repo-url re-render? re-render-opts opts graph-added-chan]
   (when (or (:new-graph? opts) (not (:refresh? opts)))
     (create-default-files! repo-url))
   (when re-render?
@@ -217,7 +173,7 @@
   (async/offer! graph-added-chan true))
 
 (defn- parse-files-and-create-default-files-inner!
-  [repo-url files delete-files delete-blocks file-paths re-render? re-render-opts opts]
+  [repo-url files delete-files delete-blocks re-render? re-render-opts opts]
   (let [supported-files (graph-parser/filter-files files)
         delete-data (->> (concat delete-files delete-blocks)
                          (remove nil?))
@@ -239,7 +195,7 @@
           (parse-and-load-file! repo-url file (assoc
                                                (select-keys opts [:new-graph? :verbose])
                                                :skip-db-transact? false)))
-        (after-parse repo-url files file-paths re-render? re-render-opts opts graph-added-chan))
+        (after-parse repo-url re-render? re-render-opts opts graph-added-chan))
       (async/go-loop [tx []]
         (if-let [item (async/<! chan)]
           (let [[idx file] item
@@ -267,18 +223,17 @@
               (recur tx')))
           (do
             (when (seq tx) (db/transact! repo-url tx {:from-disk? true}))
-            (after-parse repo-url files file-paths re-render? re-render-opts opts graph-added-chan)))))
+            (after-parse repo-url re-render? re-render-opts opts graph-added-chan)))))
     graph-added-chan))
 
 (defn- parse-files-and-create-default-files!
-  [repo-url files delete-files delete-blocks file-paths re-render? re-render-opts opts]
-  (parse-files-and-create-default-files-inner! repo-url files delete-files delete-blocks file-paths re-render? re-render-opts opts))
+  [repo-url files delete-files delete-blocks re-render? re-render-opts opts]
+  (parse-files-and-create-default-files-inner! repo-url files delete-files delete-blocks re-render? re-render-opts opts))
 
 (defn parse-files-and-load-to-db!
   [repo-url files {:keys [delete-files delete-blocks re-render? re-render-opts _refresh?] :as opts
                    :or {re-render? true}}]
-  (let [file-paths (map :file/path files)]
-    (parse-files-and-create-default-files! repo-url files delete-files delete-blocks file-paths re-render? re-render-opts opts)))
+  (parse-files-and-create-default-files! repo-url files delete-files delete-blocks re-render? re-render-opts opts))
 
 (defn load-repo-to-db!
   [repo-url {:keys [diffs nfs-files refresh? new-graph? empty-graph?]}]
@@ -341,13 +296,14 @@
 (defn remove-repo!
   [{:keys [url] :as repo}]
   (let [delete-db-f (fn []
-                      (let [graph-exists? (db/get-db url)]
+                      (let [graph-exists? (db/get-db url)
+                            current-repo (state/get-current-repo)]
                         (db/remove-conn! url)
                         (db-persist/delete-graph! url)
                         (search/remove-db! url)
                         (state/delete-repo! repo)
                         (when graph-exists? (ipc/ipc "graphUnlinked" repo))
-                        (when (= (state/get-current-repo) url)
+                        (when (= current-repo url)
                           (state/set-current-repo! (:url (first (state/get-repos)))))))]
     (when (or (config/local-db? url) (= url "local"))
       (-> (p/let [_ (idb/clear-local-db! url)] ; clear file handles
@@ -427,8 +383,7 @@
        (route-handler/redirect-to-home!)
        (let [local? (config/local-db? repo)]
          (if local?
-           (p/let [_ (metadata-handler/set-pages-metadata! repo)]
-             (nfs-rebuild-index! repo ok-handler))
+           (nfs-rebuild-index! repo ok-handler)
            (rebuild-index! repo))
          (js/setTimeout
           (route-handler/redirect-to-home!)
@@ -444,7 +399,6 @@
     (p/do!
      (when before
        (before))
-     (metadata-handler/set-pages-metadata! repo)
      (db/persist! repo)
      (when on-success
        (on-success)))
@@ -497,7 +451,7 @@
   [local-repos remote-repos]
   (when-let [repos' (seq (concat (map #(if-let [sync-meta (seq (:sync-meta %))]
                                          (assoc % :GraphUUID (second sync-meta)) %)
-                                      local-repos)
+                                   local-repos)
                                  (some->> remote-repos
                                           (map #(assoc % :remote? true)))))]
     (let [repos' (group-by :GraphUUID repos')
@@ -514,7 +468,7 @@
   [url]
   (when-let [graphs (seq (and url (combine-local-&-remote-graphs
                                     (state/get-repos)
-                                    (state/get-remote-repos))))]
+                                    (state/get-remote-graphs))))]
     (first (filter #(when-let [url' (:url %)]
                       (= url url')) graphs))))
 
@@ -523,7 +477,7 @@
   (p/let [repos (get-repos)
           repos' (combine-local-&-remote-graphs
                   repos
-                  (state/get-remote-repos))]
+                  (state/get-remote-graphs))]
     (state/set-repos! repos')
     repos'))
 
