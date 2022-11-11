@@ -76,7 +76,12 @@
                :else
                nil)]
 
-       [:div.text-sm.opacity-50 (str "Version " version)]]]
+       [:div.text-sm version]
+
+       [:a.text-sm.fade-link.underline.inline
+        {:target "_blank"
+         :href "https://docs.logseq.com/#/page/changelog"}
+        "What's new?"]]]
 
      (when-not (or update-pending?
                    (string/blank? type))
@@ -299,7 +304,12 @@
   [:div.it.sm:grid.sm:grid-cols-3.sm:gap-4.sm:items-:div.it.sm:grid.sm:grid-cols-3.sm:gap-4.sm:items-start
    [:label.block.text-sm.font-medium.leading-5.opacity-70
     {:for "custom_date_format"}
-    (t :settings-page/custom-date-format)]
+    (t :settings-page/custom-date-format)
+    (ui/tippy {:html        (t :settings-page/custom-date-format-warning)     
+               :class       "tippy-hover ml-2"
+               :interactive true
+               :disabled    false}
+              (svg/info))]
    [:div.mt-1.sm:mt-0.sm:col-span-2
     [:div.max-w-lg.rounded-md
      [:select.form-select.is-small
