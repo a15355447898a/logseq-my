@@ -207,72 +207,9 @@ jobs:
           name: logseq-linux-builds
           path: builds
 
-  build-windows:
-    runs-on: windows-latest
-    needs: [ compile-cljs ]
-    steps:
-      - name: Download The Static Asset
-        uses: actions/download-artifact@v2
-        with:
-          name: static
-          path: static
-
-      - name: Retrieve tag version
-        id: ref
-        run: |
-          $env:PkgVer=$(cat ./static/VERSION)
-          echo "::set-output name=version::$env:PkgVer"
-
-      - name: Install Node.js, NPM and Yarn
-        uses: actions/setup-node@v2
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-
-      # - name: Cache Node Modules
-      #   uses: actions/cache@v2
-      #   with:
-      #    path: |
-      #      **/node_modules
-      #    key: ${{ runner.os }}-node-modules
-
-      - name: Deps Electron app
-        run: yarn install
-        working-directory: ./static
-
-      - name: Fix Deps Electron app
-        run: yarn run postinstall
-        working-directory: ./static/node_modules/dugite/
-
-      - name: Prepare Code Sign
-        if: ${{ github.repository == 'logseq/logseq' }}
-        run: |
-          [IO.File]::WriteAllBytes($(Get-Location).Path + "\codesign.pfx", [Convert]::FromBase64String($env:CERTIFICATE))
-        env:
-          CERTIFICATE: ${{ secrets.CODE_SIGN_CERTIFICATE }}
-
-      - name: Build/Release Electron app
-        run: yarn electron:make
-        working-directory: ./static
-        env:
-          CODE_SIGN_CERTIFICATE_FILE: ../codesign.pfx
-          CODE_SIGN_CERTIFICATE_PASSWORD: ${{ secrets.CODE_SIGN_CERTIFICATE_PASSWORD }}
-
-      - name: Save Artifact
-        run: |
-          mkdir builds
-          mv static\out\make\squirrel.windows\x64\*.exe    builds\Logseq-win-x64-${{ steps.ref.outputs.version }}.exe
-          mv static\out\make\squirrel.windows\x64\*.nupkg  builds\Logseq-win-x64-${{ steps.ref.outputs.version }}-full.nupkg
-          mv static\out\make\squirrel.windows\x64\RELEASES builds\RELEASES
-
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v2
-        with:
-          name: logseq-win64-builds
-          path: builds
-
   nightly-release:
     if: ${{ github.event_name == 'schedule' || github.event.inputs.build-target == 'nightly' }}
-    needs: [ build-linux, build-windows]
+    needs: [ build-linux]
     runs-on: ubuntu-18.04
     steps:
 
@@ -282,15 +219,8 @@ jobs:
           name: logseq-linux-builds
           path: ./
 
-      - name: Download The Windows Artifact
-        uses: actions/download-artifact@v2
-        with:
-          name: logseq-win64-builds
-          path: ./
-
       - name: Generate SHA256 checksums
         run: |
-          sha256sum *-win-* >> SHA256SUMS.txt
           sha256sum *-linux-* >> SHA256SUMS.txt
           cat SHA256SUMS.txt
 
@@ -312,13 +242,12 @@ jobs:
           files: |
             ./SHA256SUMS.txt
             ./*.zip
-            ./*.exe
             ./*.AppImage
 
   release:
     # NOTE: For now, we only have beta channel to be released on Github
     if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.build-target == 'beta' }}
-    needs: [ build-linux, build-windows ]
+    needs: [ build-linux]
     runs-on: ubuntu-latest
     steps:
 
@@ -326,12 +255,6 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           name: logseq-linux-builds
-          path: ./
-
-      - name: Download The Windows Artifact
-        uses: actions/download-artifact@v2
-        with:
-          name: logseq-win64-builds
           path: ./
 
       - name: List files
@@ -343,13 +266,8 @@ jobs:
           pkgver=$(cat VERSION)
           echo ::set-output name=version::$pkgver
 
-      - name: Fix .nupkg name in RELEASES file
-        run: |
-          sed -i "s/Logseq-.*.nupkg/Logseq-win-x64-${{ steps.ref.outputs.version }}-full.nupkg/g" RELEASES
-
       - name: Generate SHA256 checksums
         run: |
-          sha256sum *-win-* >> SHA256SUMS.txt
           sha256sum *-linux-* >> SHA256SUMS.txt
           sha256sum RELEASES >> SHA256SUMS.txt
           cat SHA256SUMS.txt
@@ -368,7 +286,4 @@ jobs:
             ./VERSION
             ./SHA256SUMS.txt
             ./*.zip
-            ./*.exe
-            ./*.nupkg
-            ./RELEASES
             ./*.AppImage

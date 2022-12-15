@@ -77,7 +77,16 @@
                :else
                nil)]
 
-       [:div.text-sm version]
+       [:div.text-sm.cursor
+        {:title (str "Revision: " config/revison)
+         :on-click (fn []
+                     (notification/show! [:div "Current Revision: "
+                                          [:a {:target "_blank"
+                                               :href (str "https://github.com/logseq/logseq/commit/" config/revison)}
+                                           config/revison]]
+                                         :info
+                                         false))}
+        version]
 
        [:a.text-sm.fade-link.underline.inline
         {:target "_blank"
@@ -306,7 +315,7 @@
    [:label.block.text-sm.font-medium.leading-5.opacity-70
     {:for "custom_date_format"}
     (t :settings-page/custom-date-format)
-    (ui/tippy {:html        (t :settings-page/custom-date-format-warning)     
+    (ui/tippy {:html        (t :settings-page/custom-date-format-warning)
                :class       "tippy-hover ml-2"
                :interactive true
                :disabled    false}
@@ -357,11 +366,11 @@
           logical-outdenting?
           config-handler/toggle-logical-outdenting!))
 
-(defn perferred-pasting-file [t perferred-pasting-file?]
+(defn preferred-pasting-file [t preferred-pasting-file?]
   (toggle "preferred_pasting_file"
           (t :settings-page/preferred-pasting-file)
-          perferred-pasting-file?
-          config-handler/toggle-perferred-pasting-file!))
+          preferred-pasting-file?
+          config-handler/toggle-preferred-pasting-file!))
 
 (defn tooltip-row [t enable-tooltip?]
   (toggle "enable_tooltip"
@@ -431,7 +440,8 @@
   (row-with-button-action
     {:left-label   (t :settings-page/customize-shortcuts)
      :button-label (t :settings-page/shortcut-settings)
-     :on-click      #((state/close-settings!)
+     :on-click      (fn []
+                      (state/close-settings!)
                       (route-handler/redirect! {:to :shortcut-setting}))
      :-for         "customize_shortcuts"}))
 
@@ -443,7 +453,7 @@
    [:div.mt-1.sm:mt-0.sm:col-span-2
     [:div
      (ui/button
-       "Settings"
+       (t :settings)
        :class "text-sm p-1"
        :style {:margin-top "0px"}
        :on-click
@@ -466,7 +476,7 @@
           (not instrument-disabled?)
           (fn [] (instrument/disable-instrument
                    (not instrument-disabled?)))
-          [:span.text-sm.opacity-50 "Logseq永远不会收集您的本地图谱数据库或出售您的数据。"]))
+          [:span.text-sm.opacity-50 (t :settings-page/disable-sentry-desc)]))
 
 (defn clear-cache-row [t]
   (row-with-button-action {:left-label   (t :settings-page/clear-cache)
@@ -572,7 +582,7 @@
         enable-timetracking? (state/enable-timetracking?)
         enable-all-pages-public? (state/all-pages-public?)
         logical-outdenting? (state/logical-outdenting?)
-        perferred-pasting-file? (state/perferred-pasting-file?)
+        preferred-pasting-file? (state/preferred-pasting-file?)
         enable-tooltip? (state/enable-tooltip?)
         enable-shortcut-tooltip? (state/sub :ui/shortcut-tooltip?)
         show-brackets? (state/show-brackets?)
@@ -584,9 +594,10 @@
      (workflow-row t preferred-workflow)
      ;; (enable-block-timestamps-row t enable-block-timestamps?)
      (show-brackets-row t show-brackets?)
+
      (when (util/electron?) (switch-spell-check-row t))
      (outdenting-row t logical-outdenting?)
-     (perferred-pasting-file t perferred-pasting-file?)
+     (preferred-pasting-file t preferred-pasting-file?)
      (when-not (or (util/mobile?) (mobile-util/native-platform?))
        (shortcut-tooltip-row t enable-shortcut-tooltip?))
      (when-not (or (util/mobile?) (mobile-util/native-platform?))
@@ -630,7 +641,7 @@
 
      (ui/admonition
        :warning
-       [:p "清除缓存将丢弃打开的图谱.您将丢失未保存的更改."])]))
+       [:p (t :settings-page/clear-cache-warning)])]))
 
 (rum/defc sync-enabled-switcher
   [enabled?]
