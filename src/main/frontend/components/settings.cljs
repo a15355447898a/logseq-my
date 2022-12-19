@@ -724,7 +724,7 @@
           [:a.mx-1 {:href "https://blog.logseq.com/how-to-setup-and-use-logseq-sync/"
                     :target "_blank"}
            "这里"]
-          "来获取有关如何设置和使用Sync的说明。"]]])
+          "来获取有关如何设置和使用Sync的说明。"]
           (whiteboards-switcher-row enable-whiteboards?)]])
 
      ;; (when-not web-platform?
